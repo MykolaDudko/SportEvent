@@ -1,0 +1,140 @@
+﻿USE [SportEvent]
+GO
+/****** Object:  Table [dbo].[__EFMigrationsHistory]    Script Date: 22.08.2022 13:10:39 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[__EFMigrationsHistory](
+	[MigrationId] [nvarchar](150) NOT NULL,
+	[ProductVersion] [nvarchar](32) NOT NULL,
+ CONSTRAINT [PK___EFMigrationsHistory] PRIMARY KEY CLUSTERED 
+(
+	[MigrationId] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[EventDto]    Script Date: 22.08.2022 13:10:39 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[EventDto](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[ProviderEventID] [int] NOT NULL,
+	[EventName] [nvarchar](max) NOT NULL,
+	[EventDate] [datetime2](7) NOT NULL,
+ CONSTRAINT [PK_EventDto] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+/****** Object:  Table [dbo].[OddsDto]    Script Date: 22.08.2022 13:10:39 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[OddsDto](
+	[Id] [int] IDENTITY(1,1) NOT NULL,
+	[ProviderOddsID] [int] NOT NULL,
+	[ProviderEventID] [int] NOT NULL,
+	[OddsName] [nvarchar](max) NOT NULL,
+	[OddsRate] [float] NOT NULL,
+	[Status] [nvarchar](max) NOT NULL,
+ CONSTRAINT [PK_OddsDto] PRIMARY KEY CLUSTERED 
+(
+	[Id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+ALTER TABLE [dbo].[OddsDto]  WITH CHECK ADD  CONSTRAINT [FK_OddsDto_EventDto_ProviderEventID] FOREIGN KEY([ProviderEventID])
+REFERENCES [dbo].[EventDto] ([Id])
+ON DELETE CASCADE
+GO
+ALTER TABLE [dbo].[OddsDto] CHECK CONSTRAINT [FK_OddsDto_EventDto_ProviderEventID]
+GO
+/****** Object:  StoredProcedure [dbo].[sp_event_odd_do]    Script Date: 22.08.2022 13:10:39 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+
+-- =================================================================
+-- Author:		DUDKO MYKOLA
+-- Create date: 20.08.2022
+-- Description:	INSERT/UPDATE TABLE EVENT/ODDS
+-- =================================================================
+CREATE procedure [dbo].[sp_event_odd_do]
+(
+	@s_items					nvarchar(max)
+)
+as
+
+       declare @p_roviderEventID INT;
+	declare @p_roviderOddsID INT;
+	set @p_roviderEventID =(SELECT TOP 1 [ProviderEventID] from openjson(@s_items, '$') WITH ([ProviderEventID] INT '$.ProviderEventID'));
+	set @p_roviderOddsID = (SELECT TOP 1 [ProviderOddsID] from openjson(@s_items, '$') WITH ([ProviderOddsID] INT '$.ProviderOddsID'));
+
+	
+    
+  
+  if (select count(*) from [dbo].[EventDto] where [ProviderEventID] = @p_roviderEventID) > 0
+  begin
+  /*UPDATE*/
+	UPDATE [dbo].[EventDto] 
+	set [EventDate]  = J.[EventDate]
+    from openjson(@s_items) 	
+    WITH (
+	[ProviderEventID] INT '$.ProviderEventID', 
+    [EventDate] DATETIME '$.EventDate'
+	) J where  [dbo].[EventDto] .[ProviderEventID] = @p_roviderEventID; 
+end
+else
+begin	
+    /*INSERT*/
+    INSERT INTO [dbo].[EventDto] 
+	SELECT [ProviderEventID],[EventName],[EventDate]
+    from openjson(@s_items, '$') 
+    WITH (
+	[ProviderEventID] INT '$.ProviderEventID', 
+	[EventName] NVARCHAR(50) '$.EventName',
+    [EventDate] DATETIME '$.EventDate'
+	);
+
+	select @p_roviderEventID;
+	end
+if (select count(*) from [dbo].[EventDto] where [ProviderEventID] = @p_roviderEventID) > 0 and (select count(*) from [dbo].[OddsDto] where [ProviderOddsID] = @p_roviderOddsID) > 0
+begin
+    /*UPDATE*/
+	UPDATE [dbo].OddsDto 
+	set [OddsRate] = J.[OddsRate],
+	    [Status] = J.[Status]
+    from openjson(@s_items, '$.OddsList') 
+    WITH (
+	[ProviderOddsID] INT '$.ProviderOddsID', 
+	[OddsRate] FLOAT '$.OddsRate',
+	[Status] NVARCHAR(50) '$.Status'	
+	)J where  [dbo].OddsDto.[ProviderOddsID] = J.[ProviderOddsID]; 
+	
+   end
+   
+else
+  begin
+  	/*INSERT*/
+	INSERT INTO [dbo].OddsDto 
+    SELECT [ProviderOddsID],@p_roviderEventID as [ProviderEventID] ,[OddsName],[OddsRate],[Status]
+    from openjson(@s_items, '$') 
+    WITH (
+	[ProviderOddsID] INT '$.ProviderOddsID', 
+	[OddsName] NVARCHAR(50) '$.OddsName',
+	[OddsRate] FLOAT '$.OddsRate',
+	[Status] NVARCHAR(50) '$.Status'	
+	);
+	select @p_roviderOddsID;
+  end
+
+GO
